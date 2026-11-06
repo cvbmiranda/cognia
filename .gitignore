@@ -1,0 +1,15 @@
+.env
+# Ambiente Virtual e Cache do Python
+backend/venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/alembic/__pycache__/
+
+# Variáveis de Ambiente (Segurança)
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# Frontend Next.js
+frontend/node_modules/
+frontend/.next/
