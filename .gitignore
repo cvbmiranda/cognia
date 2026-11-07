@@ -13,3 +13,6 @@ frontend/.env.local
 # Frontend Next.js
 frontend/node_modules/
 frontend/.next/
+
+__pycache__/
+*.pyc
