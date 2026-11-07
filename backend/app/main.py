@@ -7,6 +7,8 @@ from . import ai_service
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
+from app.ai.service import processar_evolucao_clinica
+from datetime import datetime, timezone
 
 app = FastAPI(title="CognIA API - Gestão Clínica")
 
@@ -157,3 +159,62 @@ def criar_agendamento(agendamento: schemas.AgendamentoCreate, db: Session = Depe
         
         # Se for qualquer outro erro de integridade
         raise HTTPException(status_code=400, detail=f"Erro de integridade no banco de dados: {str(e.orig)}")
+
+
+@app.post("/evolucoes/", response_model=schemas.EvolucaoResponse, tags=["Evoluções"])
+def criar_evolucao(evolucao: schemas.EvolucaoCreate, db: Session = Depends(get_db)):
+    # 1. Busca o paciente para injetar os objetivos terapêuticos no contexto da IA
+    db_paciente = db.query(models.Paciente).filter(models.Paciente.id == evolucao.paciente_id).first()
+    if not db_paciente:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+
+    # 2. Chama a IA para processar as anotações
+    try:
+        texto_gerado_ia = processar_evolucao_clinica(
+            anotacoes_brutas=evolucao.anotacoes_brutas,
+            formato=evolucao.formato_documento,
+            objetivos_terapeuticos=db_paciente.objetivos_terapeuticos,
+            modelo="qwen2.5:3b"
+        )
+    except RuntimeError as e:
+        # Se o Ollama estiver desligado, o FastAPI avisa o frontend
+        raise HTTPException(status_code=503, detail=str(e))
+
+    # 3. Prepara o registro para o banco de dados
+    nova_evolucao = models.EvolucaoClinica(
+        paciente_id=evolucao.paciente_id,
+        agendamento_id=evolucao.agendamento_id,
+        anotacoes_brutas=evolucao.anotacoes_brutas,
+        rascunho_ia=texto_gerado_ia,
+        formato_documento=evolucao.formato_documento.upper(),
+        status_documento="Rascunho",
+        modelo_ia="qwen2.5:3b"
+    )
+    
+    db.add(nova_evolucao)
+    db.commit()
+    db.refresh(nova_evolucao)
+    
+    return nova_evolucao
+
+@app.patch("/evolucoes/{evolucao_id}/finalizar", response_model=schemas.EvolucaoResponse, tags=["Evoluções"])
+def finalizar_evolucao(evolucao_id: str, dados: schemas.EvolucaoFinalizar, db: Session = Depends(get_db)):
+    # 1. Busca a evolução existente
+    db_evolucao = db.query(models.EvolucaoClinica).filter(models.EvolucaoClinica.id == evolucao_id).first()
+    if not db_evolucao:
+        raise HTTPException(status_code=404, detail="Evolução não encontrada.")
+
+    # 2. Trava de segurança: impede edição de documentos já assinados
+    if db_evolucao.status_documento == "Finalizado":
+        raise HTTPException(status_code=400, detail="Esta evolução já foi finalizada e não pode ser alterada.")
+
+    # 3. Aplica as edições do psicólogo e muda o status
+    db_evolucao.texto_final = dados.texto_final
+    db_evolucao.status_documento = "Finalizado"
+    db_evolucao.finalizado_em = datetime.now(timezone.utc)
+    
+    # 4. Salva no banco
+    db.commit()
+    db.refresh(db_evolucao)
+    
+    return db_evolucao

@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODELO_ATUAL = "qwen2.5:0.5b"
+MODELO_ATUAL = "qwen2.5:3b"
 
 def gerar_rascunho_evolucao(anotacoes_brutas: str, formato_documento: str = "LIVRE") -> str:
     """

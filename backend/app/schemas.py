@@ -84,3 +84,6 @@ class EvolucaoResponse(BaseModel):
     finalizado_em: Optional[datetime]
     
     model_config = ConfigDict(from_attributes=True)
+
+class EvolucaoFinalizar(BaseModel):
+    texto_final: str
